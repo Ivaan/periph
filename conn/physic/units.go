@@ -9,6 +9,62 @@ import (
 	"time"
 )
 
+// Angle is the measurement of the difference in orientation between two vectors
+// stored as an int64 nano radian.
+//
+// A negative angle is valid.
+type Angle int64
+
+// String returns the angle formatted as a string in degree.
+func (a Angle) String() string {
+	// Angle is not a S.I. unit, so it must not be prefixed by S.I. prefixes.
+	if a == 0 {
+		return "0°"
+	}
+	// Round.
+	prefix := ""
+	if a < 0 {
+		a = -a
+		prefix = "-"
+	}
+	switch {
+	case a < Degree:
+		v := ((a * 1000) + Degree/2) / Degree
+		return prefix + "0." + prefixZeros(3, int(v)) + "°"
+	case a < 10*Degree:
+		v := ((a * 1000) + Degree/2) / Degree
+		i := v / 1000
+		v = v - i*1000
+		return prefix + strconv.FormatInt(int64(i), 10) + "." + prefixZeros(3, int(v)) + "°"
+	case a < 100*Degree:
+		v := ((a * 1000) + Degree/2) / Degree
+		i := v / 1000
+		v = v - i*1000
+		return prefix + strconv.FormatInt(int64(i), 10) + "." + prefixZeros(2, int(v)) + "°"
+	case a < 1000*Degree:
+		v := ((a * 1000) + Degree/2) / Degree
+		i := v / 1000
+		v = v - i*1000
+		return prefix + strconv.FormatInt(int64(i), 10) + "." + prefixZeros(1, int(v)) + "°"
+	default:
+		v := (a + Degree/2) / Degree
+		return prefix + strconv.FormatInt(int64(v), 10) + "°"
+	}
+}
+
+// Angle constants.
+const (
+	NanoRadian  Angle = 1
+	MicroRadian       = 1000 * NanoRadian
+	MilliRadian       = 1000 * MicroRadian
+	Radian            = 1000 * MilliRadian
+
+	// Theta is 2π. This is equivalent to 360°.
+	Theta  = 6283185307 * NanoRadian
+	Pi     = 3141592653 * NanoRadian
+	Degree = 17453293 * NanoRadian
+)
+
 // Distance is a measurement of length stored as an int64 nano metre.
 //
 // This is one of the base unit in the International System of Units.
