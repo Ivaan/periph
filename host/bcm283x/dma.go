@@ -740,6 +740,7 @@ func dmaWritePWMFIFO() (*dmaChannel, *videocore.Mem, error) {
 }
 
 func startPWMbyDMA(p *Pin, rng, data uint32) (*dmaChannel, *videocore.Mem, error) {
+	fmt.Println("startPWMbyDMA", p, rng, data)
 	if drvDMA.dmaMemory == nil {
 		return nil, nil, errors.New("bcm283x-dma is not initialized; try running as root?")
 	}
@@ -747,6 +748,7 @@ func startPWMbyDMA(p *Pin, rng, data uint32) (*dmaChannel, *videocore.Mem, error
 	if err != nil {
 		return nil, nil, err
 	}
+	fmt.Println("allocateCB", cb, buf, err)
 	u := buf.Uint32()
 	cbBytes := uint32(32)
 	offsetBytes := cbBytes * 2
@@ -757,6 +759,7 @@ func startPWMbyDMA(p *Pin, rng, data uint32) (*dmaChannel, *videocore.Mem, error
 		drvGPIO.gpioBaseAddr + 0x28 + 4*uint32(p.number/32), // clear
 		drvGPIO.gpioBaseAddr + 0x1C + 4*uint32(p.number/32), // set
 	}
+	fmt.Println("ControlBlock et al", cb, u, cbBytes, physBuf, physBit, dest)
 	// High
 	if err := cb[0].initBlock(physBit, dest[1], data*4, false, true, false, false, dmaPWM); err != nil {
 		_ = buf.Close()
@@ -783,6 +786,7 @@ func startPWMbyDMA(p *Pin, rng, data uint32) (*dmaChannel, *videocore.Mem, error
 	}
 	ch.startIO(physBuf)
 
+	fmt.Println("startPWMbyDMA returning", ch, buf, physBuf)
 	return ch, buf, nil
 }
 
