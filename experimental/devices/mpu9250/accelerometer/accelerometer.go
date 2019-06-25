@@ -2,9 +2,9 @@ package accelerometer
 
 const (
 	ACCEL_FS_SEL_2G  = 0
-	ACCEL_FS_SEL_4G  = 8
-	ACCEL_FS_SEL_8G  = 0x10
-	ACCEL_FS_SEL_16G = 0x18
+	ACCEL_FS_SEL_4G  = 1
+	ACCEL_FS_SEL_8G  = 2
+	ACCEL_FS_SEL_16G = 3
 
 	ACCEL_FS_SENS_2G  = 2.0 / 32768.0
 	ACCEL_FS_SENS_4G  = 4.0 / 32768.0

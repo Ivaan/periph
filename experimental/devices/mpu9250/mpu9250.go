@@ -13,6 +13,7 @@ package mpu9250
 import (
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"periph.io/x/periph/experimental/devices/mpu9250/reg"
@@ -90,7 +91,12 @@ func (m *MPU9250) Init() error {
 
 // Calibrate Calibrates the device using maximum precision for both Gyroscope and Accelerometer.
 func (m *MPU9250) Calibrate() error {
+	return m.CalibrateWithOrientation("z")
+}
 
+// Calibrate Calibrates the device using maximum precision for both Gyroscope and Accelerometer.
+//orientation specifies the UP direction (must be one of x, y, or z)
+func (m *MPU9250) CalibrateWithOrientation(orientation string) error {
 	if err := m.transferBatch(calibrateSequence, "error calibrating %d: [%x:%x] => %v"); err != nil {
 		return err
 	}
@@ -161,10 +167,26 @@ func (m *MPU9250) Calibrate() error {
 	m.debug("Raw accelerometer bias: X:%d, Y:%d, Z:%d\n", accelXBias, accelYBias, accelZBias)
 	m.debug("Raw gyroscope bias X:%d, Y:%d, Z:%d\n", gyroXBias, gyroYBias, gyroZBias)
 
-	if accelZBias > 0 {
-		accelZBias -= accelsenSitivity
-	} else {
-		accelZBias += accelsenSitivity
+	orientation = strings.ToLower(orientation)
+	switch orientation {
+	case "x":
+		if accelXBias > 0 {
+			accelXBias -= accelsenSitivity
+		} else {
+			accelXBias += accelsenSitivity
+		}
+	case "y":
+		if accelYBias > 0 {
+			accelYBias -= accelsenSitivity
+		} else {
+			accelYBias += accelsenSitivity
+		}
+	default:
+		if accelZBias > 0 {
+			accelZBias -= accelsenSitivity
+		} else {
+			accelZBias += accelsenSitivity
+		}
 	}
 
 	var factoryGyroBiasX, factoryGyroBiasY, factoryGyroBiasZ int16
@@ -182,15 +204,17 @@ func (m *MPU9250) Calibrate() error {
 	}
 	m.debug("Factory gyroscope bias: X:%d, Y:%d, Z:%d\n", int16(factoryGyroBiasX), int16(factoryGyroBiasY), int16(factoryGyroBiasZ))
 
-	if err := writeGyroOffset(gyroXBias, reg.MPU9250_GYRO_XOUT_H, reg.MPU9250_GYRO_XOUT_L); err != nil {
+	if err := writeGyroOffset(gyroXBias, reg.MPU9250_XG_OFFSET_H, reg.MPU9250_XG_OFFSET_L); err != nil {
 		return err
 	}
-	if err := writeGyroOffset(gyroYBias, reg.MPU9250_GYRO_YOUT_H, reg.MPU9250_GYRO_YOUT_L); err != nil {
+	if err := writeGyroOffset(gyroYBias, reg.MPU9250_YG_OFFSET_H, reg.MPU9250_YG_OFFSET_L); err != nil {
 		return err
 	}
-	if err := writeGyroOffset(gyroZBias, reg.MPU9250_GYRO_ZOUT_H, reg.MPU9250_GYRO_ZOUT_L); err != nil {
+	if err := writeGyroOffset(gyroZBias, reg.MPU9250_ZG_OFFSET_H, reg.MPU9250_ZG_OFFSET_L); err != nil {
 		return err
 	}
+
+	m.debug("Updated gyroscope bias: X:%d, Y:%d, Z:%d\n", int16(gyroXBias), int16(gyroYBias), int16(gyroZBias))
 
 	// Construct the accelerometer biases for push to the hardware accelerometer bias registers. These registers contain
 	// factory trim values which must be added to the calculated accelerometer biases; on boot up these registers will hold
@@ -227,6 +251,8 @@ func (m *MPU9250) Calibrate() error {
 	factoryBiasX |= maskX
 	factoryBiasY |= maskY
 	factoryBiasZ |= maskZ
+
+	m.debug("Updated accelerometer bias: X:%d, Y:%d, Z:%d\n", int16(factoryBiasX), int16(factoryBiasY), int16(factoryBiasZ))
 
 	if err := writeAccelOffset(uint16(factoryBiasX), reg.MPU9250_XA_OFFSET_H, reg.MPU9250_XA_OFFSET_L); err != nil {
 		return err
@@ -414,6 +440,10 @@ func (m *MPU9250) SetClockSource(src byte) error {
 //
 // range New gyroscope range value
 // the mask is 11000
+// 0 = +/- 250 degrees/sec
+// 1 = +/- 500 degrees/sec
+// 2 = +/- 1000 degrees/sec
+// 3 = +/- 2000 degrees/sec
 func (m *MPU9250) SetGyroRange(rangeVal byte) error {
 	if rangeVal > 3 {
 		return wrapf("accepted values are in the range 0 .. 3")
@@ -441,11 +471,15 @@ func (m *MPU9250) GetGyroRange() (byte, error) {
 // The masked value is 11000
 //
 // range New full-scale accelerometer range setting
+// 0 = +/- 2g
+// 1 = +/- 4g
+// 2 = +/- 8g
+// 3 = +/- 16g
 func (m *MPU9250) SetAccelRange(rangeVal byte) error {
-	if (rangeVal >> 3) > 3 {
+	if rangeVal > 3 {
 		return wrapf("accepted values are in the range 0 .. 3")
 	}
-	return m.transport.writeMaskedReg(reg.MPU9250_ACCEL_CONFIG, reg.MPU9250_ACCEL_FS_SEL_MASK, rangeVal)
+	return m.transport.writeMaskedReg(reg.MPU9250_ACCEL_CONFIG, reg.MPU9250_ACCEL_FS_SEL_MASK, rangeVal<<3)
 }
 
 // GetAccelRange Get full-scale accelerometer range.
@@ -1922,24 +1956,24 @@ var (
 	}
 	calibrateSequence = [][]byte{
 		{reg.MPU9250_PWR_MGMT_1, 0x80}, // reset device
-		{100},                          // sleep 100 ms
-		{reg.MPU9250_PWR_MGMT_1, 1},    // get stable time source; Auto select clock source to be PLL gyroscope reference if ready else use the internal oscillator, bits 2:0 = 001
+		{100}, // sleep 100 ms
+		{reg.MPU9250_PWR_MGMT_1, 1}, // get stable time source; Auto select clock source to be PLL gyroscope reference if ready else use the internal oscillator, bits 2:0 = 001
 		{reg.MPU9250_PWR_MGMT_2, 0},
-		{200},                         // wait 200 ms
+		{200}, // wait 200 ms
 		{reg.MPU9250_INT_ENABLE, 0},   // Disable all interrupts
 		{reg.MPU9250_FIFO_EN, 0},      // Disable FIFO
 		{reg.MPU9250_PWR_MGMT_1, 0},   // Turn on internal clock source
 		{reg.MPU9250_I2C_MST_CTRL, 0}, // Disable I2C master
 		{reg.MPU9250_USER_CTRL, 0},    // Disable FIFO and I2C master modes
 		{reg.MPU9250_USER_CTRL, 0x0C}, // Reset FIFO and DMP
-		{15},                          // wait 15 ms
+		{15}, // wait 15 ms
 		{reg.MPU9250_CONFIG, 0x01},    // Set low-pass filter to 188 Hz
 		{reg.MPU9250_SMPLRT_DIV, 0},   // Set sample rate to 1 kHz
 		{reg.MPU9250_GYRO_CONFIG, 0},  // Set gyro full-scale to 250 degrees per second, maximum sensitivity
 		{reg.MPU9250_ACCEL_CONFIG, 0}, // Set accelerometer full-scale to 2 g, maximum sensitivity
 		{reg.MPU9250_USER_CTRL, 0x40}, // Enable FIFO
 		{reg.MPU9250_FIFO_EN, 0x78},   // Enable gyro and accelerometer sensors for FIFO  (max size 512 bytes in MPU-9150)
-		{40},                          // wait 40 ms
-		{reg.MPU9250_FIFO_EN, 0x00},   // Disable gyro and accelerometer sensors for FIFO
+		{40}, // wait 40 ms
+		{reg.MPU9250_FIFO_EN, 0x00}, // Disable gyro and accelerometer sensors for FIFO
 	}
 )
